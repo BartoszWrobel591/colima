@@ -101,7 +101,12 @@ func (f *inotifyProcess) handleEvents(ctx context.Context, watcher dirWatcher) e
 			}
 
 			log.Infof("syncing inotify event for %s ", ev.path)
-			if err := f.guest.RunQuiet("sudo", "/bin/chmod", ev.Mode(), ev.path); err != nil {
+			// Emit a richer set of events than chmod alone:
+			//   - truncate to current size triggers IN_MODIFY (what chokidar/vite/webpack expect)
+			//   - touch -m bumps mtime so stat-based watchers don't drop the event as a duplicate
+			//   - chmod preserves the original IN_ATTRIB behavior for backwards compatibility
+			script := `truncate -s "$(stat -c %s -- "$1")" -- "$1" && touch -m -- "$1" && chmod "$2" -- "$1"`
+			if err := f.guest.RunQuiet("sudo", "sh", "-c", script, "_", ev.path, ev.Mode()); err != nil {
 				log.Trace(fmt.Errorf("error syncing inotify event: %w", err))
 			}
 		}
