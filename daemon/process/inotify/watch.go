@@ -35,7 +35,12 @@ func (d *defaultWatcher) Watch(ctx context.Context, dirs []string, mod chan<- mo
 		if err != nil {
 			return fmt.Errorf("invalid directory: %w", err)
 		}
-		err = notify.Watch(dir+"...", c, notify.Write)
+		// Subscribe to Write|Create|Rename so we also catch atomic-rename writes
+		// (write to temp file + rename over target). Editors and AI tools that
+		// safe-save (including Claude Code) hit this path; on macOS FSEvents
+		// reports them as Renamed/Created, not Modified, so Write alone misses
+		// every such edit and the guest-side re-emit never fires.
+		err = notify.Watch(dir+"...", c, notify.Write|notify.Create|notify.Rename)
 		if err != nil {
 			return fmt.Errorf("error watching directory recursively '%s': %w", dir, err)
 		}
